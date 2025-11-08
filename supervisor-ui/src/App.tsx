@@ -134,9 +134,30 @@ export default function App() {
 
   async function submitAnswer() {
     if (!selected) return;
-    await axios.post(`${API}/api/requests/${selected.id}/answer`, { answerText: answer });
-    setAnswer(""); setSelected(null);
-    // polling will pick the update; no extra setState needed
+
+    const text = answer.trim();
+    if (!text) return;
+
+    try {
+      // Send the supervisor's answer to backend
+      await axios.post(`${API}/api/requests/${selected.id}/answer`, {
+        answerText: text,
+      });
+
+      // Immediately follow up with the caller (UX improvement)
+      const followup = `Thanks for waiting. Regarding: ${selected.question}. ${text}`;
+      log("Agent: " + followup);
+      speak(followup);
+
+      // Clear local UI state
+      setAnswer("");
+      setSelected(null);
+
+      // Polling loop will refresh requests automatically
+    } catch (err: any) {
+      log("Error submitting answer: " + (err?.message || err));
+      alert("Failed to submit the answer. Please try again.");
+    }
   }
 
   useEffect(() => () => { roomRef.current?.disconnect(); }, []);
