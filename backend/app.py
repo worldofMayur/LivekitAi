@@ -2,9 +2,15 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
-from sqlalchemy import create_engine, Column, String, Text, DateTime, Enum, ForeignKey
+from sqlalchemy import create_engine, Column, String, Text, DateTime, Enum, ForeignKey, Index
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 import enum, uuid, re
+import os, time, jwt
+
+# ==== LiveKit env ====
+LIVEKIT_URL = os.getenv("LIVEKIT_URL", "")
+LK_API_KEY = os.getenv("LIVEKIT_API_KEY", "")
+LK_API_SECRET = os.getenv("LIVEKIT_API_SECRET", "")
 
 # ==== DB setup
 engine = create_engine("sqlite:///./frontdesk.db", connect_args={"check_same_thread": False})
@@ -23,20 +29,35 @@ class Request(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     caller_id = Column(String, nullable=False)
     question = Column(Text, nullable=False)
-    status = Column(Enum(ReqStatus), default=ReqStatus.PENDING, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    status = Column(Enum(ReqStatus), default=ReqStatus.PENDING, nullable=False, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    timeout_at = Column(DateTime, nullable=False)
-    answer_id = Column(String, ForeignKey("answers.id"), nullable=True)
-    answer = relationship("Answer", back_populates="request")
+    timeout_at = Column(DateTime, nullable=False, index=True)
+
+    # Points to the "chosen" answer row (optional 1:1)
+    answer_id = Column(String, ForeignKey("answers.id"), nullable=True, index=True)
+
+    # ✅ Disambiguate: this relationship uses Request.answer_id -> Answer.id
+    answer = relationship(
+        "Answer",
+        foreign_keys=[answer_id],
+        primaryjoin="Request.answer_id == Answer.id",
+        uselist=False,
+    )
 
 class Answer(Base):
     __tablename__ = "answers"
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    request_id = Column(String, ForeignKey("requests.id"))
+    request_id = Column(String, ForeignKey("requests.id"), index=True)
     answer_text = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    request = relationship("Request", back_populates="answer")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+    # ✅ Disambiguate: this relationship uses Answer.request_id -> Request.id
+    request = relationship(
+        "Request",
+        foreign_keys=[request_id],
+        primaryjoin="Answer.request_id == Request.id",
+    )
 
 class KBEntry(Base):
     __tablename__ = "kb"
@@ -44,7 +65,11 @@ class KBEntry(Base):
     question_canonical = Column(Text, nullable=False, unique=True)
     answer_text = Column(Text, nullable=False)
     source = Column(String, default="LEARNED")
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+# Optional helpful indexes (SQLite ignores many advanced options, but harmless)
+Index("ix_requests_status_created", Request.status, Request.created_at)
+Index("ix_kb_created", KBEntry.created_at)
 
 Base.metadata.create_all(engine)
 
@@ -102,17 +127,21 @@ def answer_request(req_id):
     answer_text = body["answerText"]
     db = SessionLocal()
     try:
-        r = db.query(Request).get(req_id)
+        # SQLAlchemy 2.0 style get
+        r = db.get(Request, req_id)
         if not r:
             return jsonify({"error":"not found"}), 404
         if r.status != ReqStatus.PENDING:
             return jsonify({"error":"not pending"}), 400
+
         a = Answer(request_id=r.id, answer_text=answer_text)
-        db.add(a); db.flush()
+        db.add(a); db.flush()  # a.id now available
+
         r.answer_id = a.id
         r.status = ReqStatus.RESOLVED
         r.updated_at = datetime.now(timezone.utc)
         db.commit()
+
         print(f"*** Follow-up to {r.caller_id}: Regarding '{r.question}': {answer_text} ***")
         upsert_kb(db, r.question, answer_text)
         return jsonify({"ok": True})
@@ -126,7 +155,10 @@ def list_requests():
     try:
         q = db.query(Request)
         if status:
-            q = q.filter(Request.status == ReqStatus(status))
+            try:
+                q = q.filter(Request.status == ReqStatus(status))
+            except ValueError:
+                return jsonify({"error":"invalid status"}), 400
         rows = q.order_by(Request.created_at.desc()).all()
         data = [{
             "id": r.id,
@@ -156,11 +188,42 @@ def list_kb():
     finally:
         db.close()
 
+@app.get("/token")
+def mint_token():
+    # Query params: ?room=demo&user=mayur
+    room = request.args.get("room", "demo-room")
+    user = request.args.get("user", "guest-" + str(int(time.time())))
+    now = int(time.time())
+    exp = now + 60 * 10  # 10 minutes
+
+    if not LK_API_KEY or not LK_API_SECRET or not LIVEKIT_URL:
+        return jsonify({"error":"LIVEKIT env not set"}), 500
+
+    # LiveKit Access Token payload (minimal)
+    payload = {
+        "iss": LK_API_KEY,
+        "sub": user,
+        "exp": exp,
+        "nbf": now - 10,
+        "video": {
+            "room": room,
+            "roomJoin": True,
+            "canPublish": True,
+            "canSubscribe": True
+        }
+    }
+
+    token = jwt.encode(payload, LK_API_SECRET, algorithm="HS256")
+    return jsonify({"token": token, "url": LIVEKIT_URL})
+
 def sweep_timeouts():
     db = SessionLocal()
     try:
         now = datetime.now(timezone.utc)
-        overdue = db.query(Request).filter(Request.status == ReqStatus.PENDING, Request.timeout_at <= now).all()
+        overdue = db.query(Request).filter(
+            Request.status == ReqStatus.PENDING,
+            Request.timeout_at <= now
+        ).all()
         for r in overdue:
             r.status = ReqStatus.UNRESOLVED
             r.updated_at = now
