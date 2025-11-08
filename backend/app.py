@@ -6,11 +6,15 @@ from sqlalchemy import create_engine, Column, String, Text, DateTime, Enum, Fore
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 import enum, uuid, re
 import os, time, jwt
+from dotenv import load_dotenv   # add this
+
+load_dotenv()  # add this line right after imports
+
 
 # ==== LiveKit env ====
-LIVEKIT_URL = os.getenv("LIVEKIT_URL", "")
-LK_API_KEY = os.getenv("LIVEKIT_API_KEY", "")
-LK_API_SECRET = os.getenv("LIVEKIT_API_SECRET", "")
+LIVEKIT_URL = os.getenv("wss://voice-agent-t5bld539.livekit.cloud", "")
+LK_API_KEY = os.getenv("APIsyjHrdvo6mjs", "")
+LK_API_SECRET = os.getenv("AtsNVhqSb6X7OVFtyX9a9yHE1Xr2uPjfoGextiWLfXGB", "")
 
 # ==== DB setup
 engine = create_engine("sqlite:///./frontdesk.db", connect_args={"check_same_thread": False})
@@ -190,31 +194,48 @@ def list_kb():
 
 @app.get("/token")
 def mint_token():
-    # Query params: ?room=demo&user=mayur
-    room = request.args.get("room", "demo-room")
-    user = request.args.get("user", "guest-" + str(int(time.time())))
-    now = int(time.time())
-    exp = now + 60 * 10  # 10 minutes
+    from flask import current_app
+    try:
+        room = request.args.get("room", "demo-room")
+        user = request.args.get("user", "guest-" + str(int(time.time())))
+        now = int(time.time())
+        exp = now + 60 * 10  # 10 minutes
 
-    if not LK_API_KEY or not LK_API_SECRET or not LIVEKIT_URL:
-        return jsonify({"error":"LIVEKIT env not set"}), 500
+        # Trim accidental spaces/newlines from .env on Windows
+        url = (os.getenv("LIVEKIT_URL") or "").strip()
+        key = (os.getenv("LIVEKIT_API_KEY") or "").strip()
+        secret = (os.getenv("LIVEKIT_API_SECRET") or "").strip()
 
-    # LiveKit Access Token payload (minimal)
-    payload = {
-        "iss": LK_API_KEY,
-        "sub": user,
-        "exp": exp,
-        "nbf": now - 10,
-        "video": {
-            "room": room,
-            "roomJoin": True,
-            "canPublish": True,
-            "canSubscribe": True
+        # Basic validation with helpful messages
+        problems = []
+        if not url: problems.append("LIVEKIT_URL is empty")
+        if not key: problems.append("LIVEKIT_API_KEY is empty")
+        if not secret: problems.append("LIVEKIT_API_SECRET is empty")
+        if url and not url.startswith("wss://"):
+            problems.append("LIVEKIT_URL must start with wss://")
+        if problems:
+            return jsonify({"error": "LIVEKIT env not set", "details": problems}), 500
+
+        payload = {
+            "iss": key,
+            "sub": user,
+            "exp": exp,
+            "nbf": now - 10,
+            "video": {
+                "room": room,
+                "roomJoin": True,
+                "canPublish": True,
+                "canSubscribe": True
+            }
         }
-    }
 
-    token = jwt.encode(payload, LK_API_SECRET, algorithm="HS256")
-    return jsonify({"token": token, "url": LIVEKIT_URL})
+        token = jwt.encode(payload, secret, algorithm="HS256")
+        return jsonify({"token": token, "url": url})
+    except Exception as e:
+        current_app.logger.exception("Token mint failed")
+        # Return the error so you can see it in the browser/Network tab
+        return jsonify({"error": "token_mint_failed", "message": str(e)}), 500
+
 
 def sweep_timeouts():
     db = SessionLocal()
