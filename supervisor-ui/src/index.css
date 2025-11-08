@@ -1,0 +1,176 @@
+/* ===== Theme tokens ===== */
+:root{
+  color-scheme: dark;
+  --bg:#0f1115;
+  --panel:#151922;
+  --panel-2:#0f1219;
+  --text:#e7e9ee;
+  --muted:#9aa3b2;
+  --border:#232737;
+  --ring:#32384a;
+  --brand:#4b5cc4;
+  --brand-2:#2b3a90;
+  --success:#19c37d;
+  --warn:#f5a524;
+
+  --radius:10px;
+  --s-1:4px; --s-2:8px; --s-3:12px; --s-4:16px; --s-6:24px; --s-8:32px;
+  --shadow: 0 0 0 1px var(--border), 0 8px 30px rgba(0,0,0,.35);
+}
+
+/* ===== Resets / base ===== */
+*{ box-sizing: border-box }
+html, body, #root{ height:100% }
+html{ -webkit-text-size-adjust:100% }
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font:14px/1.55 system-ui, -apple-system, Segoe UI, Roboto, Arial, "Helvetica Neue", Helvetica;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+}
+
+/* Keep layout natural (no full-screen centering) */
+#root{
+  display:block;
+  min-height:100%;
+  padding: var(--s-2);
+}
+
+/* ===== Typography ===== */
+h1,h2,h3{ margin:0 0 var(--s-3) 0; font-weight:600 }
+h1{ font-size:28px }
+h2{ font-size:24px }
+h3{ font-size:18px }
+p,small{ color:var(--muted) }
+
+/* ===== Links ===== */
+a{ color:var(--brand); text-decoration:none }
+a:hover{ text-decoration:underline }
+
+/* ===== Cards / panels ===== */
+.card{
+  background:var(--panel);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  box-shadow: none;
+  padding: var(--s-3);
+}
+.card.elevated{ box-shadow: var(--shadow) }
+
+/* ===== Buttons ===== */
+button{
+  appearance:none;
+  border:1px solid transparent;
+  background:var(--brand-2);
+  color:#fff;
+  padding:10px 12px;
+  border-radius:8px;
+  cursor:pointer;
+  font:500 14px/1 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  transition: transform .05s ease-out, box-shadow .15s ease, background .15s ease, border-color .15s ease;
+  will-change: transform;
+}
+button:hover{ filter:saturate(1.1) }
+button:active{ transform: translateY(1px) }
+button:disabled{ opacity:.6; cursor:not-allowed }
+.btn-ghost{
+  background:transparent;
+  border:1px solid var(--ring);
+  color:var(--text);
+}
+.btn-xs{ padding:6px 8px; border-radius:6px; font-size:12px }
+
+/* ===== Inputs / textarea ===== */
+input, textarea, select{
+  width:100%;
+  background:var(--panel-2);
+  color:var(--text);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:10px 12px;
+  outline:none;
+  transition: border-color .15s ease;
+}
+input:focus, textarea:focus, select:focus{ border-color:var(--ring) }
+textarea{ min-height:100px; resize:vertical }
+
+/* ===== Tables ===== */
+table{
+  width:100%;
+  border-collapse:collapse;
+  background:var(--panel-2);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  overflow:hidden;
+}
+thead th{
+  font-weight:600;
+  text-align:left;
+  padding:12px;
+  background:linear-gradient(0deg, var(--panel-2), var(--panel));
+  border-bottom:1px solid var(--border);
+}
+tbody td{
+  padding:12px;
+  border-top:1px solid var(--border);
+  vertical-align:top;
+}
+tbody tr:hover{ background:rgba(255,255,255,.02) }
+
+/* ===== Tabs (side column) ===== */
+.tabs{
+  position:sticky; top:12px;
+  display:flex; flex-direction:column; gap:8px;
+}
+.tab{
+  padding:10px 12px;
+  background:#1a1f2b;
+  border:1px solid var(--border);
+  color:var(--text);
+  border-radius:8px;
+  text-align:left;
+  cursor:pointer;
+}
+.tab.active{
+  background:#232737;
+  outline:2px solid var(--brand);
+}
+
+/* ===== Log area ===== */
+.log{
+  white-space:pre-wrap;
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-radius:6px;
+  padding:8px;
+  max-height:160px;
+  overflow:auto;
+}
+
+/* ===== Layout helpers ===== */
+.row{ display:flex; gap:var(--s-2); align-items:center }
+.stack > * + *{ margin-top:var(--s-2) }
+.grid-2{ display:grid; grid-template-columns:1fr 220px; gap:var(--s-2) }
+
+/* Let the browser skip work for offscreen content */
+.content-auto{ content-visibility:auto; }
+
+/* ===== Focus & accessibility ===== */
+:focus-visible{ outline:2px solid var(--brand); outline-offset:2px }
+
+/* ===== Scrollbar (WebKit) ===== */
+*::-webkit-scrollbar{ height:10px; width:10px }
+*::-webkit-scrollbar-thumb{ background: #2a2f42; border-radius:10px; border:2px solid transparent; background-clip:padding-box }
+*::-webkit-scrollbar-track{ background: transparent }
+
+/* ===== Motion preferences ===== */
+@media (prefers-reduced-motion: reduce){
+  *{ animation:none !important; transition:none !important }
+}
+
+/* ===== Small screens ===== */
+@media (max-width: 860px){
+  .grid-2{ grid-template-columns: 1fr }
+}
